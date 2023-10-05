@@ -60,12 +60,10 @@ public:
 
 class Cluster {
 private:
-    int clusterCount;
     std::vector<double> centroid;
     std::vector<Point> points;
 public:
-    Cluster(int clusterCount, Point newCentroid) {
-        this->clusterCount = clusterCount;
+    Cluster(Point newCentroid) {
         for (int i = 0; i < newCentroid.getDimensionality(); i++) {
             centroid.push_back(newCentroid.getValue(i));
         }
@@ -99,6 +97,10 @@ public:
     double getCentroidValue(int dimension) {
         return centroid[dimension];
     }
+
+    void resetCluster() {
+        points.clear();
+    }
 };
 
 class KMeans {
@@ -124,32 +126,50 @@ public:
     }
 
     void doKMeans() {
-        int iteration = 1;
-        int bestRun;
+        int bestRun = 0;
         double bestSSE = 0;
-        double oldSSE = 2;
-        double newSSE = 1;
+        double* SSE = new double[iterations];
+        
         numberOfPoints = points.size();
         dimensionality = points[0].getDimensionality();
 
         std::ofstream outfile(outFileName);
         for (int i = 1; i <= runs; i++) {
-            if (i == 2) {
-                bestSSE = newSSE;
+            for (int j = 0; j < iterations; j++) {
+                SSE[j] = 0;
             }
+            clusters.clear();
             outfile << "Run " + std::to_string(i) + "\n-----\n";
             initClusters();
-            iteration = 1;
-            while (iteration <= iterations && (oldSSE - newSSE) / oldSSE > convergenceThreshold) {
-                clusterPoints();
-                newSSE = resetCentroid();
-                outfile << "Iteration " + std::to_string(iteration) + ": SSE = " + std::to_string(newSSE) + "\n";
-                if (newSSE < bestSSE) {
-                    bestSSE = newSSE;
-                    bestRun = iteration;
+
+            for (int j = 0; j < numberOfPoints; j++) {
+                double* returnValue = new double[2];
+                returnValue = getNearestCluster(points[j]);
+                int nearestCluster = returnValue[0];
+                clusters[nearestCluster].addPoint(points[j]);
+                SSE[0] += returnValue[1];
+            }
+            resetCentroid();
+            outfile << "Iteration " + std::to_string(1) + ": SSE = " + std::to_string(SSE[0]) + "\n";
+            int iteration = 1;
+
+            while (iteration < iterations && SSE[iteration] < SSE[iteration - 1]) {
+                for (int j = 0; j < numberOfPoints; j++) {
+                    double* returnValue = new double[2];
+                    returnValue = getNearestCluster(points[j]);
+                    int nearestCluster = returnValue[0];
+                    clusters[nearestCluster].addPoint(points[i]);
+                    SSE[iteration] += returnValue[1];
                 }
-                oldSSE = newSSE;
+                resetCentroid();
+                outfile << "Iteration " + std::to_string(iteration + 1) + ": SSE = " + std::to_string(SSE[iteration]) + "\n";
                 iteration++;
+            }
+            bestSSE = SSE[0];
+            for (int j = 2; j < iterations; j++) {
+                if (SSE[j] < bestSSE) {
+                    bestSSE = SSE[j];
+                }
             }
         }
         outfile << "Best Run: " + std::to_string(bestRun) + ": SSE = " + std::to_string(bestSSE);
@@ -175,22 +195,14 @@ public:
                     }
             } while (!unique);
             selectedCenters[i] = newRandom;
-            Cluster cluster(i, points[newRandom]);
+            Cluster cluster(points[newRandom]);
             clusters.push_back(cluster);
         }
     }
 
-    void clusterPoints() {
-        int nearestCluster;
-        for (int i = 0; i < numberOfPoints; i++) {
-            nearestCluster = getNearestCluster(points[i]);
-            clusters[nearestCluster].addPoint(points[i]);
-        }
-    }
-
-    int getNearestCluster(Point point) {
+    double* getNearestCluster(Point point) {
         double distance;
-        double minimumDistance;
+        double SSE;
         double sum = 0.0;
         double x;
         int nearestCluster = 0;
@@ -199,7 +211,7 @@ public:
             x = x * x;
             sum += x;
         }
-        minimumDistance = sqrt(sum);
+        SSE = sqrt(sum);
         for (int i = 1; i < numberOfClusters; i++) {
             sum = 0.0;
             for (int j = 0; j < dimensionality; j++) {
@@ -208,16 +220,18 @@ public:
                 sum += x;
             }
             distance = sqrt(sum);
-            if (minimumDistance > distance) {
-                minimumDistance = distance;
+            if (SSE > distance) {
+                SSE = distance;
                 nearestCluster = i;
             }
         }
-        return nearestCluster;
+        double* returnValue = new double[2];
+        returnValue[0] = nearestCluster;
+        returnValue[1] = SSE;
+        return returnValue;
     }
 
-    double resetCentroid() {
-        double SSE = 0;
+    void resetCentroid() {
         for (int i = 0; i < numberOfClusters; i++) {
             int numberOfPointsInCluster = clusters[i].getNumberOfPointsInCluster();
             std::vector<double> newCentroid;
@@ -228,12 +242,10 @@ public:
                         sum += clusters[i].getPoint(k).getValue(j);
                     }
                     newCentroid.push_back(sum / numberOfPointsInCluster);
-                    SSE += sum / numberOfPointsInCluster;
                 }
             }
             clusters[i].setCentroid(newCentroid);
         }
-        return SSE;
     }
 };
 
