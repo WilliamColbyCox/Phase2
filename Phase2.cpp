@@ -15,14 +15,18 @@
 #include <random>
 #include <vector>
 
+int dimensionality;
+int numberOfPoints;
+int iterations;
+int numberOfClusters;
+double convergenceThreshold;
+int runs;
+
 class Point {
 private:
-    int dimensionality = 1;
-    double* pointData;
-
+    double* pointData = new double[dimensionality];
     void stringToDoubleStar(std::string string) {
         double stringDouble = 0;
-        pointData = new double[dimensionality];
         for (int i = 0; i < dimensionality; i++) {
             stringDouble = std::stod(string);
             pointData[i] = std::stod(string);
@@ -33,24 +37,9 @@ private:
             }
         }
     }
-
-    int findDimensionality(std::string string) {
-        for (int i = 0; i < string.length(); i++) {
-            if (string[i] == ' ') {
-                dimensionality++;
-            }
-        }
-        return dimensionality;
-    }
-
 public:
-    Point(std::string pointString) {
-        findDimensionality(pointString);
-        stringToDoubleStar(pointString);
-    }
-
-    int getDimensionality() {
-        return dimensionality;
+    Point(std::string nextLine) {
+        stringToDoubleStar(nextLine);
     }
 
     double getValue(int dimension) {
@@ -61,128 +50,97 @@ public:
 class Cluster {
 private:
     std::vector<double> centroid;
-    std::vector<Point> points;
+    std::vector<Point> clusteredPoints;
 public:
-    Cluster(Point newCentroid) {
-        for (int i = 0; i < newCentroid.getDimensionality(); i++) {
-            centroid.push_back(newCentroid.getValue(i));
-        }
-    }
-
-    void addPoint(Point point) {
-        points.push_back(point);
-    }
-
-    void removeAllPoints() {
-        points.clear();
-    }
-
-    Point getPoint(int pointCount) {
-        return points[pointCount];
-    }
-
-    double getPointValue(int pointCount, int dimension) {
-        return points[pointCount].getValue(dimension);
-        
-    }
-
-    int getNumberOfPointsInCluster() {
-        return points.size();
-    }
-
-    void setCentroid(std::vector<double> newCentroid) {
+    Cluster(std::vector<double> newCentroid) {
         centroid = newCentroid;
     }
-
+    void addPoint(Point point) {
+        clusteredPoints.push_back(point);
+    }
+    void removeAllPoints() {
+        clusteredPoints.clear();
+    }
+    Point getPoint(int pointCount) {
+        return clusteredPoints[pointCount];
+    }
+    double getPointValue(int pointCount, int dimension) {
+        return clusteredPoints[pointCount].getValue(dimension);
+    }
     double getCentroidValue(int dimension) {
         return centroid[dimension];
     }
-
-    void resetCluster() {
-        points.clear();
+    int getNumberOfPointsInCluster() {
+        return clusteredPoints.size();
+    }
+    void setCentroid(std::vector<double> newCentroid) {
+        centroid = newCentroid;
     }
 };
 
 class KMeans {
 private:
-    int numberOfClusters;
-    int iterations;
-    double convergenceThreshold;
-    int runs;
-    int dimensionality;
-    int numberOfPoints;
+    std::vector<Point> allPoints;
+    std::vector<Cluster> clusters;
     std::string outFileName;
 public:
-    std::vector<Cluster> clusters;
-    std::vector<Point> points;
-
-    KMeans(int numberOfClusters, int iterations, double convergenceThreshold, int runs, std::vector<Point> points, std::string outFileName) {
-        this->numberOfClusters = numberOfClusters;
-        this->iterations = iterations;
-        this->runs = runs;
-        this->points = points;
-        this->convergenceThreshold = convergenceThreshold;
+    KMeans(std::vector<Point> mainPoints, std::string outFileName) {
+        allPoints = mainPoints;
         this->outFileName = outFileName;
+        run();
     }
-
-    void doKMeans() {
+    void run() {
         int bestRun = 0;
         double bestSSE = 0;
-        double* SSE = new double[iterations];
-        
-        numberOfPoints = points.size();
-        dimensionality = points[0].getDimensionality();
-
+        std::vector<double> SSE;
         std::ofstream outfile(outFileName);
-        for (int i = 1; i <= runs; i++) {
-            for (int j = 0; j < iterations; j++) {
-                SSE[j] = 0;
-            }
+        for (int i = 0; i < runs; i++) {
+            SSE.clear();
             clusters.clear();
-            outfile << "Run " + std::to_string(i) + "\n-----\n";
             initClusters();
-
-            for (int j = 0; j < numberOfPoints; j++) {
-                double* returnValue = new double[2];
-                returnValue = getNearestCluster(points[j]);
-                int nearestCluster = returnValue[0];
-                clusters[nearestCluster].addPoint(points[j]);
-                SSE[0] += returnValue[1];
-            }
-            resetCentroid();
-            outfile << "Iteration " + std::to_string(1) + ": SSE = " + std::to_string(SSE[0]) + "\n";
-            int iteration = 1;
-
-            while (iteration < iterations && SSE[iteration] < SSE[iteration - 1]) {
+            outfile << "Run " + std::to_string(i + 1) + "\n-----\n";
+            int iteration = 0;
+            while (iteration < 2) {
                 for (int j = 0; j < numberOfPoints; j++) {
-                    double* returnValue = new double[2];
-                    returnValue = getNearestCluster(points[j]);
-                    int nearestCluster = returnValue[0];
-                    clusters[nearestCluster].addPoint(points[i]);
-                    SSE[iteration] += returnValue[1];
+                    int nearestCluster = getNearestCluster(allPoints[j]);
+                    clusters[nearestCluster].addPoint(allPoints[j]);
                 }
                 resetCentroid();
-                outfile << "Iteration " + std::to_string(iteration + 1) + ": SSE = " + std::to_string(SSE[iteration]) + "\n";
+                outfile << "Iteration " + std::to_string(iteration + 1) + ": SSE = ";
+                SSE.push_back(getSSE());
+                outfile << std::to_string(SSE[iteration]) + "\n";
                 iteration++;
             }
-            bestSSE = SSE[0];
-            for (int j = 2; j < iterations; j++) {
-                if (SSE[j] < bestSSE) {
-                    bestSSE = SSE[j];
+            while (iteration < iterations && (abs(SSE[iteration - 2] - SSE[iteration - 1]) / SSE[iteration - 2]) > convergenceThreshold) {
+                for (int j = 0; j < numberOfPoints; j++) {
+                    int nearestCluster = getNearestCluster(allPoints[j]);
+                    clusters[nearestCluster].addPoint(allPoints[j]);
                 }
+                resetCentroid();
+                outfile << "Iteration " + std::to_string(iteration + 1) + ": SSE = ";
+                SSE.push_back(getSSE());
+                outfile << std::to_string(SSE[iteration]) + "\n";
+                for (int j = 0; j < numberOfClusters; j++) {
+                    clusters[j].removeAllPoints();
+                }
+                iteration++;
+            }
+            if (i == 0) {
+                bestSSE = SSE[iteration - 1];
+                bestRun = 1;
+            }
+            else if (SSE[iteration - 1] < bestSSE) {
+                bestSSE = SSE[iteration - 1];
+                bestRun = iteration;
             }
         }
-        outfile << "Best Run: " + std::to_string(bestRun) + ": SSE = " + std::to_string(bestSSE);
-        outfile.close();
+        outfile << "\nBest Run: " + std::to_string(bestRun) + ": SSE = " + std::to_string(bestSSE);
     }
-
     void initClusters() {
-        int* selectedCenters = new int[numberOfClusters];
-
+        int* randomCenters = new int[numberOfClusters];
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distrib(1, numberOfPoints);
-
+        std::uniform_int_distribution<> distrib(1, numberOfPoints - 1);
         bool unique;
         int newRandom;
         for (int i = 0; i < numberOfClusters; i++) {
@@ -190,20 +148,23 @@ public:
                 newRandom = distrib(gen);
                 unique = true;
                 for (int j = 0; j < i; j++)
-                    if (selectedCenters[j] == newRandom) {
+                    if (randomCenters[j] == newRandom) {
                         unique = false;
                     }
             } while (!unique);
-            selectedCenters[i] = newRandom;
-            Cluster cluster(points[newRandom]);
-            clusters.push_back(cluster);
+            randomCenters[i] = newRandom;
+            std::vector<double> centroid;
+            for (int j = 0; j < dimensionality; j++) {
+                centroid.push_back(allPoints[newRandom].getValue(j));
+            }
+            clusters.push_back(centroid);
         }
     }
 
-    double* getNearestCluster(Point point) {
+    int getNearestCluster(Point point) {
         double distance;
-        double SSE;
-        double sum = 0.0;
+        double minimumDistance;
+        double sum = 0;
         double x;
         int nearestCluster = 0;
         for (int i = 0; i < dimensionality; i++) {
@@ -211,41 +172,53 @@ public:
             x = x * x;
             sum += x;
         }
-        SSE = sqrt(sum);
+        minimumDistance = sum;
         for (int i = 1; i < numberOfClusters; i++) {
-            sum = 0.0;
+            sum = 0;
             for (int j = 0; j < dimensionality; j++) {
                 x = clusters[i].getCentroidValue(j) - point.getValue(j);
                 x = x * x;
                 sum += x;
             }
-            distance = sqrt(sum);
-            if (SSE > distance) {
-                SSE = distance;
+            if (minimumDistance > sum) {
+                minimumDistance = sum;
                 nearestCluster = i;
             }
         }
-        double* returnValue = new double[2];
-        returnValue[0] = nearestCluster;
-        returnValue[1] = SSE;
-        return returnValue;
+        return nearestCluster;
     }
 
     void resetCentroid() {
         for (int i = 0; i < numberOfClusters; i++) {
-            int numberOfPointsInCluster = clusters[i].getNumberOfPointsInCluster();
             std::vector<double> newCentroid;
+            int numberOfPointsInCluster = clusters[i].getNumberOfPointsInCluster();
             for (int j = 0; j < dimensionality; j++) {
-                double sum = 0.0;
+                double sum = 0;
                 if (numberOfPointsInCluster > 0) {
                     for (int k = 0; k < numberOfPointsInCluster; k++) {
-                        sum += clusters[i].getPoint(k).getValue(j);
+                        sum += clusters[i].getPointValue(k, j);
                     }
                     newCentroid.push_back(sum / numberOfPointsInCluster);
                 }
             }
-            clusters[i].setCentroid(newCentroid);
+            if (numberOfPointsInCluster > 0) {
+                clusters[i].setCentroid(newCentroid);
+            }
         }
+    }
+
+    double getSSE() {
+        double SSE = 0;
+        double difference = 0;
+        for (int i = 0; i < numberOfClusters; i++) {
+            for (int k = 0; k < clusters[i].getNumberOfPointsInCluster(); k++) {
+                for (int j = 0; j < dimensionality; j++) {
+                    difference = clusters[i].getCentroidValue(j) - clusters[i].getPointValue(k, j);
+                    SSE += difference * difference;
+                }
+            }
+        }
+        return SSE;
     }
 };
 
@@ -253,10 +226,10 @@ int main(int argc, char* argv[])
 {
     //initialize arguments
     std::string fileName = argv[1];
-    int clusters = std::stoi(argv[2]);
-    int iterations = std::stoi(argv[3]);
-    double convergenceThreshold = std::atof(argv[4]);
-    int runs = std::stoi(argv[5]);
+    numberOfClusters = std::stoi(argv[2]);
+    iterations = std::stoi(argv[3]);
+    convergenceThreshold = std::atof(argv[4]);
+    runs = std::stoi(argv[5]);
 
     //open file and get point info
     std::ifstream infile(fileName);
@@ -266,8 +239,8 @@ int main(int argc, char* argv[])
     std::string outFileName = fileName.substr(0, lastindex) + "_output.txt";
 
     //get numberOfPoints and dimensionality
-    int numberOfPoints = std::stoi(firstLine);
-    int dimensionality = std::stoi(firstLine.substr(firstLine.find(" ")));
+    numberOfPoints = std::stoi(firstLine);
+    dimensionality = std::stoi(firstLine.substr(firstLine.find(" ")));
 
     //get individual data points
     std::string nextLine;
@@ -278,6 +251,5 @@ int main(int argc, char* argv[])
         points.push_back(point);
     }
     infile.close();
-    KMeans kmeans(clusters, iterations, convergenceThreshold, runs, points, outFileName);
-    kmeans.doKMeans();
+    KMeans kmeans(points, outFileName);
 }
